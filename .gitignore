@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Environment / secrets
+.env
+
+# GAMA headless byproducts
+*.xml
+.work*/
+.metadata/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
