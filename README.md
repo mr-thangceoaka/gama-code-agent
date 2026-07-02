@@ -11,6 +11,14 @@ reads is sent to the Claude API for reasoning).
 
 > 🇻🇳 Tiếng Việt: xem phần "Tóm tắt tiếng Việt" ở cuối README.
 
+## Demo
+
+![Example review session](docs/demo.svg)
+
+*Illustrative example of the report format. The findings shown (a real
+degrees-vs-radians `sin()` unit bug in a Binary-Logit traffic model) come from an
+actual review run.*
+
 ## What it does
 
 Given a `.gaml` file, the agent follows a fixed 4-step review process
