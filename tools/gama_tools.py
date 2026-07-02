@@ -1,28 +1,16 @@
 r"""
-Custom tools for the GAMA Code Agent.
+Two tools that wrap GAMA headless so Claude can call them:
+  validate_gaml_syntax -> compile-check one model (no full run)
+  run_gama_headless    -> actually run a batch experiment
 
-Wraps the GAMA headless launcher (`gama-headless.bat` on Windows,
-`gama-headless.sh` on macOS/Linux) into two tools the Claude agent can call:
+Setup: point GAMA_HEADLESS_DIR at your GAMA `headless` folder (the one with
+gama-headless.bat / .sh). See docs/.
 
-  * validate_gaml_syntax  -> compile-check ONE model without running a full sim
-  * run_gama_headless     -> actually run a batch experiment
-
-Configuration
--------------
-Set the environment variable ``GAMA_HEADLESS_DIR`` to the ``headless`` folder
-inside your GAMA installation (the folder that contains ``gama-headless.bat`` /
-``gama-headless.sh``). See docs/SETUP_WINDOWS.md or docs/SETUP_MACOS.md.
-
-Technical notes (verified in practice)
---------------------------------------
-* On Windows, ``gama-headless.bat`` fails with "not recognized" if invoked as a
-  bare name; it must be called with an ABSOLUTE path, while keeping the working
-  directory set to the headless folder so its internal relative paths
-  (``..\plugins``) resolve. This module handles that automatically.
-* The GAMA ``-validate`` flag only validates the BUILT-IN library, not your
-  file. To compile-check a specific model we use ``-xml`` (which forces GAMA to
-  compile the model in order to emit the XML). Exit code 0 + XML produced =
-  PASS; a non-zero exit (e.g. 13) = compilation failure.
+Two gotchas I hit, baked in below so you don't have to:
+- Windows: gama-headless.bat only runs via an ABSOLUTE path with cwd on the
+  headless folder. Bare name -> "not recognized".
+- Use -xml to compile-check a model, NOT -validate. -validate only checks
+  GAMA's built-in library and ignores your file. exit 0 + xml written = PASS.
 """
 
 import os
@@ -31,7 +19,7 @@ import tempfile
 
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
-# Path to the GAMA `headless` directory. MUST be provided via environment.
+# Where GAMA lives. Must come from the environment, no hardcoded paths.
 GAMA_HEADLESS_DIR = os.environ.get("GAMA_HEADLESS_DIR", "").strip()
 
 IS_WINDOWS = os.name == "nt"
@@ -43,7 +31,7 @@ def _script_path() -> str:
 
 
 def _config_error() -> "str | None":
-    """Return a human-readable error if GAMA is not configured, else None."""
+    # Message if GAMA isn't wired up yet, else None.
     if not GAMA_HEADLESS_DIR:
         return (
             "GAMA_HEADLESS_DIR is not set. Point it at the `headless` folder of "
@@ -55,11 +43,11 @@ def _config_error() -> "str | None":
 
 
 def _headless_cmd(extra_args):
-    """Build the subprocess argv for gama-headless with the given extra args."""
     script = _script_path()
     if IS_WINDOWS:
+        # abs path + cwd on headless folder, see gotcha at top
         return ["cmd", "/c", script] + extra_args
-    # macOS / Linux: invoke through bash so no chmod +x is required.
+    # bash so we don't need chmod +x
     return ["bash", script] + extra_args
 
 
@@ -75,7 +63,7 @@ def _run(extra_args, timeout):
 
 
 def _log_tail(n_lines=25):
-    """Tail of GAMA's workspace log — extra context when a compile fails."""
+    # GAMA dumps compile errors here; grab the tail for context on FAIL.
     log_path = os.path.join(GAMA_HEADLESS_DIR, ".metadata", ".log")
     try:
         with open(log_path, encoding="utf-8", errors="replace") as f:
@@ -86,11 +74,10 @@ def _log_tail(n_lines=25):
 
 @tool(
     "validate_gaml_syntax",
-    "Compile-check a single GAML model with `gama-headless -xml` (forces GAMA to "
-    "compile the model but does NOT run a full simulation). Returns PASS if the "
-    "model compiles cleanly, or FAIL with the GAMA log otherwise. Always call "
-    "this first when reviewing a model. Needs the .gaml path and the name of one "
-    "experiment defined in the model.",
+    "Compile-check one GAML model with `gama-headless -xml` (compiles it, does "
+    "not run a full sim). Returns PASS if it compiles, or FAIL plus the GAMA "
+    "log. Call this first. Needs the .gaml path and one experiment name from the "
+    "model.",
     {"gaml_path": str, "experiment_name": str},
 )
 async def validate_gaml_syntax(args):
@@ -108,15 +95,14 @@ async def validate_gaml_syntax(args):
     except subprocess.TimeoutExpired:
         return {"content": [{"type": "text", "text": "TIMEOUT after 180s during compile-check."}]}
 
+    # PASS only if it exited clean AND actually wrote the xml
     compiled = code == 0 and os.path.exists(out_xml)
     status = "PASS" if compiled else "FAIL"
     detail = f"validate: {status}\nexit_code: {code}\n"
     if not compiled:
         detail += "\n--- compile log (.metadata/.log) ---\n" + _log_tail()
-        detail += (
-            "\n(GAMA headless reports that compilation failed but not the exact "
-            "line — Read the .gaml file to locate the error.)"
-        )
+        # GAMA won't tell us the line, so read the .gaml to find it
+        detail += "\n(GAMA only says it failed, not which line. Read the .gaml to locate it.)"
     if os.path.exists(out_xml):
         os.remove(out_xml)
     return {"content": [{"type": "text", "text": detail}]}
@@ -124,9 +110,8 @@ async def validate_gaml_syntax(args):
 
 @tool(
     "run_gama_headless",
-    "Actually run a GAMA experiment in batch mode (`gama-headless -batch`). Only "
-    "call after validate_gaml_syntax has PASSED. May take minutes depending on "
-    "the simulation size.",
+    "Run a GAMA experiment for real in batch mode (`gama-headless -batch`). Only "
+    "after validate_gaml_syntax PASSes. Can take a few minutes.",
     {"gaml_path": str, "experiment_name": str, "verbose": bool},
 )
 async def run_gama_headless(args):
@@ -142,11 +127,11 @@ async def run_gama_headless(args):
         code, stdout, stderr = _run(extra, timeout=900)
         text = f"exit_code: {code}\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}"
     except subprocess.TimeoutExpired:
-        text = "TIMEOUT after 900s. The model may be too heavy or stuck in an infinite loop."
+        text = "TIMEOUT after 900s. Model's probably too heavy or stuck in a loop."
     return {"content": [{"type": "text", "text": text}]}
 
 
-# In-process MCP server bundling the two tools for registration with the agent.
+# One in-process MCP server holding both tools, registered with the agent.
 gama_tools_server = create_sdk_mcp_server(
     name="gama-tools",
     version="1.0.0",
