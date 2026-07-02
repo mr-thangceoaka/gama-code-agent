@@ -1,12 +1,12 @@
 # Setup on macOS
 
-Step-by-step guide to run the GAMA Code Agent on macOS (Intel or Apple Silicon).
+How to run the GAMA Code Agent on macOS (Intel or Apple Silicon).
 
 ## 1. Prerequisites
 
 ### Python
-macOS ships with Python, but install a fresh **Python 3.11/3.12** to keep things
-clean — via [python.org](https://www.python.org/downloads/macos/) or Homebrew:
+macOS ships a Python, but grab a clean **3.11/3.12** anyway, from
+[python.org](https://www.python.org/downloads/macos/) or Homebrew:
 
 ```bash
 brew install python@3.12
@@ -14,7 +14,7 @@ python3.12 --version
 ```
 
 ### Node.js
-Install **Node.js ≥ 20 LTS** (the Claude Agent SDK bundles the Claude Code CLI):
+Install **Node.js >= 20 LTS** (the SDK bundles the Claude Code CLI):
 
 ```bash
 brew install node
@@ -23,24 +23,23 @@ node --version
 
 ### GAMA
 Install **GAMA** from [gama-platform.org](https://gama-platform.org/download).
-It installs as an app bundle in `/Applications/Gama.app`.
+It goes into `/Applications/Gama.app`.
 
-Find the headless launcher (path can vary by version):
+Find the launcher (path shifts between versions):
 
 ```bash
 find /Applications/Gama.app -name "gama-headless.sh"
 ```
 
-Typical result:
+Usually:
 ```
 /Applications/Gama.app/Contents/headless/gama-headless.sh
 ```
 
-The folder **containing** that script (`.../headless`) is your
-`GAMA_HEADLESS_DIR`.
+The folder that holds that script (`.../headless`) is your `GAMA_HEADLESS_DIR`.
 
-> If macOS Gatekeeper blocked GAMA on first launch, open it once via
-> **right-click → Open**, or run:
+> If Gatekeeper blocked GAMA on first launch, open it once with right-click ->
+> Open, or run:
 > `xattr -dr com.apple.quarantine /Applications/Gama.app`
 
 ## 2. Get the code
@@ -50,7 +49,7 @@ git clone <your-repo-url> gama-code-agent
 cd gama-code-agent
 ```
 
-## 3. Create a virtual environment & install
+## 3. Virtual env + install
 
 ```bash
 python3.12 -m venv .venv
@@ -65,17 +64,17 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Edit `.env`:
+Fill in `.env`:
 
 ```ini
 ANTHROPIC_API_KEY=sk-ant-...
 GAMA_HEADLESS_DIR=/Applications/Gama.app/Contents/headless
 ```
 
-> Point it at the folder that contains `gama-headless.sh` (use the exact path
-> the `find` command above returned).
+Use the exact path the `find` above returned (the folder with
+`gama-headless.sh`).
 
-## 5. (Recommended) Put your model under git
+## 5. Put your model under git (recommended)
 
 ```bash
 cd /path/to/your/gama/project
@@ -92,14 +91,25 @@ source .venv/bin/activate
 python agent.py /path/to/your/model.gaml
 ```
 
-The agent prints its reasoning, `[tool call: ...]` markers, and a final report.
+It prints its reasoning, `[tool call: ...]` markers, and a final report.
 
 ## Troubleshooting
 
-| Symptom | Fix |
-|---|---|
-| `Cannot find gama-headless.sh in GAMA_HEADLESS_DIR` | Re-run the `find` command; set `GAMA_HEADLESS_DIR` to the folder that actually contains the script. |
-| `Permission denied` running the script | The agent invokes it via `bash`, so this is usually a path issue, not a chmod one. You can also `chmod +x .../gama-headless.sh`. |
-| GAMA won't start / Gatekeeper warning | `xattr -dr com.apple.quarantine /Applications/Gama.app`, then launch GAMA once manually. |
-| Validate always says PASS even for broken models | Make sure you're on this version — it uses `-xml`, not `-validate` (which ignores your file). |
-| `ANTHROPIC_API_KEY` not found | Check `.env` exists in the repo root and the key has no quotes/spaces. |
+**`Cannot find gama-headless.sh in GAMA_HEADLESS_DIR`**
+Re-run the `find` command and set `GAMA_HEADLESS_DIR` to the folder that actually
+holds the script.
+
+**`Permission denied` running the script**
+The agent runs it via `bash`, so this is usually a path issue, not a chmod one.
+You can still `chmod +x .../gama-headless.sh` if needed.
+
+**GAMA won't start / Gatekeeper warning**
+`xattr -dr com.apple.quarantine /Applications/Gama.app`, then launch GAMA once by
+hand.
+
+**Validate says PASS even for broken models**
+Make sure you're on this version. It uses `-xml`, not `-validate` (which ignores
+your file).
+
+**`ANTHROPIC_API_KEY` not found**
+Check `.env` sits in the repo root and the key has no quotes or spaces.
